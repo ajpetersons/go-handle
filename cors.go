@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/gorilla/mux"
 )
 
 // CORSOption represents a functional option for configuring the CORS middleware.
@@ -13,6 +15,7 @@ type cors struct {
 	h                      http.Handler
 	allowedHeaders         []string
 	allowedMethods         []string
+	allowedMethodFunc      func(r *http.Request, wantMethod string) (ok bool, method bool)
 	allowedOrigins         []string
 	allowedOriginValidator OriginValidator
 	exposedHeaders         []string
@@ -69,9 +72,20 @@ func (ch *cors) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		method := r.Header.Get(corsRequestMethodHeader)
-		if !ch.isMatch(method, ch.allowedMethods) {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
+		if ch.allowedMethodFunc != nil {
+			if ok, m := ch.allowedMethodFunc(r, method); !ok {
+				if !m {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+				} else {
+					w.WriteHeader(http.StatusNotFound)
+				}
+				return
+			}
+		} else {
+			if !ch.isMatch(method, ch.allowedMethods) {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
 		}
 
 		requestHeaders := strings.Split(r.Header.Get(corsRequestHeadersHeader), ",")
@@ -223,6 +237,26 @@ func AllowedMethods(methods []string) CORSOption {
 			if !ch.isMatch(normalizedMethod, ch.allowedMethods) {
 				ch.allowedMethods = append(ch.allowedMethods, normalizedMethod)
 			}
+		}
+
+		return nil
+	}
+}
+
+// RouteAllowedMethods can be used to explicitly allow methods in the
+// Access-Control-Allow-Methods header.
+// This is a replacement operation so you must also
+// pass GET, HEAD, and POST if you wish to support those methods. Methods
+// allowed are parsed from router to infer only methods allowed on routes
+func RouterAllowedMethods(r *mux.Router) CORSOption {
+	return func(ch *cors) error {
+		ch.allowedMethodFunc = func(req *http.Request, method string) (bool, bool) {
+			var match mux.RouteMatch
+			request := &http.Request{}
+			*request = *req
+			request.Method = method
+			ok := r.Match(request, &match)
+			return ok, match.MatchErr != mux.ErrMethodMismatch
 		}
 
 		return nil
