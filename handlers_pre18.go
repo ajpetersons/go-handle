@@ -1,6 +1,6 @@
 // +build !go1.8
 
-package handlers
+package handle
 
 type loggingResponseWriter interface {
 	commonLoggingResponseWriter

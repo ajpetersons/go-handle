@@ -1,6 +1,6 @@
 // +build go1.8
 
-package handlers
+package handle
 
 import (
 	"io/ioutil"
